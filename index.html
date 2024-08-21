@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas to Video</title>
+</head>
+<body>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <br>
+    <button id="downloadBtn">Download Video</button>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // Draw something on the canvas
+        ctx.fillStyle = 'red';
+        ctx.fillRect(50, 50, 200, 200);
+
+        // Create a MediaStream from the canvas
+        const stream = canvas.captureStream(30); // 30 FPS
+
+        // Create a MediaRecorder to record the stream
+        const mediaRecorder = new MediaRecorder(stream, {
+            mimeType: 'video/webm; codecs=vp9'
+        });
+
+        let chunks = [];
+        mediaRecorder.ondataavailable = function(event) {
+            if (event.data.size > 0) {
+                chunks.push(event.data);
+            }
+        };
+
+        mediaRecorder.onstop = async function() {
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            const videoUrl = URL.createObjectURL(blob);
+
+            // Add audio to the video
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const audioBuffer = await fetch('path/to/your/audio.mp3')
+                .then(response => response.arrayBuffer())
+                .then(data => audioContext.decodeAudioData(data));
+
+            const audioSource = audioContext.createBufferSource();
+            audioSource.buffer = audioBuffer;
+
+            const video = document.createElement('video');
+            video.src = videoUrl;
+            video.muted = true;
+            await video.play();
+
+            const audioStream = audioContext.createMediaStreamDestination();
+            audioSource.connect(audioStream);
+
+            const combinedStream = new MediaStream([...stream.getVideoTracks(), ...audioStream.stream.getAudioTracks()]);
+            const combinedRecorder = new MediaRecorder(combinedStream, {
+                mimeType: 'video/webm; codecs=vp9'
+            });
+
+            let combinedChunks = [];
+            combinedRecorder.ondataavailable = function(event) {
+                if (event.data.size > 0) {
+                    combinedChunks.push(event.data);
+                }
+            };
+
+            combinedRecorder.onstop = function() {
+                const combinedBlob = new Blob(combinedChunks, { type: 'video/webm' });
+                const combinedUrl = URL.createObjectURL(combinedBlob);
+
+                const a = document.createElement('a');
+                a.href = combinedUrl;
+                a.download = 'canvas-video.webm';
+                a.click();
+            };
+
+            combinedRecorder.start();
+            audioSource.start();
+            setTimeout(() => {
+                combinedRecorder.stop();
+                audioSource.stop();
+            }, 5000); // Record for 5 seconds
+        };
+
+        mediaRecorder.start();
+        setTimeout(() => {
+            mediaRecorder.stop();
+        }, 5000); // Record for 5 seconds
+
+        downloadBtn.addEventListener('click', () => {
+            mediaRecorder.stop();
+        });
+    </script>
+</body>
+</html>
